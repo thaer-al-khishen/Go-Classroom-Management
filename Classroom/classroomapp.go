@@ -5,9 +5,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"webapptrials/Classroom/Auth/Handlers"
+	"webapptrials/Classroom/Auth/Middleware"
 	Models2 "webapptrials/Classroom/Auth/Models"
 	"webapptrials/Classroom/Handlers/Teacher"
 	"webapptrials/Classroom/Models"
+	"webapptrials/Classroom/Test"
 )
 
 func main() {
@@ -23,11 +26,12 @@ func main() {
 		panic("failed to migrate database")
 	}
 
-	//Handlers.InitializeDB(db)  // Pass the DB instance to Auth
+	Handlers.InitializeDB(db) // Pass the DB instance to Auth
 	//Student.InitializeDB(db)   // Pass the DB instance to Student
 	Teacher.InitializeDB(db) // Pass the DB instance to Teacher
 	//Classroom.InitializeDB(db) // Pass the DB instance to Classroom
 	//Subject.InitializeDB(db)   // Pass the DB instance to Subject
+
 	//
 	//router := httprouter.New()
 	//
@@ -78,12 +82,22 @@ func main() {
 	//}
 
 	r := gin.Default()
+
+	//Auth
+	r.POST("/login", Handlers.Login)
+	r.POST("/register", Handlers.Register)
+	r.POST("/refresh", Handlers.RefreshToken)
+
+	//Teachers
 	r.GET("/teachers", Teacher.GetAllTeachers)
 	r.GET("/teachers/:id", Teacher.GetTeacher)
 	r.POST("/teachers", Teacher.CreateTeacher)
 	r.PUT("/teachers/:id", Teacher.UpdateTeacher)
 	r.PATCH("/teachers/:id", Teacher.PatchTeacher)
 	r.DELETE("/teachers/:id", Teacher.DeleteTeacher)
+
+	//Test
+	r.POST("/test", Middleware.RoleCheckMiddleware(Models2.Admin), Test.TestData)
 
 	ginError := r.Run(":8081")
 	if ginError != nil {

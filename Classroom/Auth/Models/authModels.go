@@ -5,10 +5,21 @@ import (
 	"time"
 )
 
+// UserRole represents the role of a User in the system.
+type UserRole int
+
+const (
+	Student UserRole = iota // defaults to 0
+	Teacher
+	Admin
+)
+
+// User struct modified to include a role
 type User struct {
 	gorm.Model
 	Username string `gorm:"uniqueIndex"`
-	Password string // This will store a hashed password
+	Password string
+	Role     *UserRole `json:"role,omitempty"`
 }
 
 type RefreshTokenModel struct {

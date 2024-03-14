@@ -5,22 +5,27 @@ import (
 	"encoding/hex"
 	"errors"
 	"github.com/golang-jwt/jwt/v5"
+	"strings"
 	"time"
+	"webapptrials/Classroom/Auth/Models"
 	"webapptrials/Classroom/Secret"
 )
 
+// Modify your Claims struct to include the role
 type Claims struct {
-	Username string `json:"username"`
+	Username string          `json:"username"`
+	Role     Models.UserRole `json:"role"`
 	jwt.RegisteredClaims
 }
 
-func GenerateToken(username string) (string, error) {
+func GenerateToken(user Models.User) (string, error) {
 	expirationTime := time.Now().Add(Secret.AccessTokenExpiry)
 	claims := &Claims{
-		Username: username,
+		Username: user.Username,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},
+		Role: *user.Role,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -51,6 +56,34 @@ func ValidateToken(tokenString string) (*Claims, error) {
 
 	if !token.Valid {
 		return nil, errors.New("invalid token, ValidationErrorMalformed")
+	}
+
+	return claims, nil
+}
+
+// ParseToken parses a JWT token string, validates it, and returns the custom claims.
+func ParseToken(tokenStr string) (*Claims, error) {
+	// Remove the Bearer prefix, if present
+	tokenStr = strings.TrimPrefix(tokenStr, "Bearer ")
+
+	// Parse the token
+	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		// Ensure the token's algorithm matches "HS256"
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+
+		return Secret.JwtKey, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate the token and ensure the token claims match the expected type
+	claims, ok := token.Claims.(*Claims)
+	if !ok || !token.Valid {
+		return nil, errors.New("invalid token")
 	}
 
 	return claims, nil

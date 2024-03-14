@@ -1,10 +1,9 @@
 package Handlers
 
 import (
-	"encoding/json"
 	"errors"
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/julienschmidt/httprouter"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"net/http"
@@ -29,37 +28,37 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-func Login(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func Login(c *gin.Context) {
 	var credentials Models.User
-	if err := json.NewDecoder(r.Body).Decode(&credentials); err != nil {
-		Shared.SendApiResponse[any](w, http.StatusBadRequest, "Invalid request", nil, "Invalid request body")
+	if err := c.ShouldBindJSON(&credentials); err != nil {
+		Shared.SendGinGenericApiResponse[any](c, http.StatusBadRequest, "Invalid request", nil, "Invalid request body")
 		return
 	}
 
 	var user Models.User
 	// Retrieve the user from the database
 	if err := db.Where("username = ?", credentials.Username).First(&user).Error; err != nil {
-		Shared.SendApiResponse[any](w, http.StatusUnauthorized, "Login failed", nil, "Invalid username or password")
+		Shared.SendGinGenericApiResponse[any](c, http.StatusUnauthorized, "Login failed", nil, "Invalid username or password")
 		return
 	}
 
 	// Compare the hashed password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(credentials.Password)); err != nil {
-		Shared.SendApiResponse[any](w, http.StatusUnauthorized, "Login failed", nil, "Invalid username or password")
+		Shared.SendGinGenericApiResponse[any](c, http.StatusUnauthorized, "Login failed", nil, "Invalid username or password")
 		return
 	}
 
 	// Generate JWT access token
-	accessTokenString, err := Utils.GenerateToken(user.Username)
+	accessTokenString, err := Utils.GenerateToken(user)
 	if err != nil {
-		Shared.SendApiResponse[any](w, http.StatusInternalServerError, "Error", nil, "Failed to generate access token")
+		Shared.SendGinGenericApiResponse[any](c, http.StatusInternalServerError, "Error", nil, "Failed to generate access token")
 		return
 	}
 
 	// Generate refresh token (could be another JWT or a random string)
 	refreshTokenString, err := Utils.GenerateRefreshToken()
 	if err != nil {
-		Shared.SendApiResponse[any](w, http.StatusInternalServerError, "Error", nil, "Failed to generate refresh token")
+		Shared.SendGinGenericApiResponse[any](c, http.StatusInternalServerError, "Error", nil, "Failed to generate refresh token")
 		return
 	}
 
@@ -70,59 +69,78 @@ func Login(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		ExpiresAt: time.Now().Add(Secret.RefreshTokenExpiry), // Set your desired expiry for refresh tokens
 	}
 	if result := db.Create(&refreshTokenModel); result.Error != nil {
-		Shared.SendApiResponse[any](w, http.StatusInternalServerError, "Error", nil, "Failed to save refresh token")
+		Shared.SendGinGenericApiResponse[any](c, http.StatusInternalServerError, "Error", nil, "Failed to save refresh token")
 		return
 	}
 
 	// Return both the access token and refresh token to the client
-	Shared.SendApiResponse(w, http.StatusOK, "Login successful", map[string]interface{}{
+	Shared.SendGinGenericApiResponse(c, http.StatusOK, "Login successful", map[string]interface{}{
 		"accessToken":  accessTokenString,
 		"refreshToken": refreshTokenString,
 	}, "")
 }
 
-func Register(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func Register(c *gin.Context) {
 	var u Models.User
-	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
-		Shared.SendApiResponse[any](w, http.StatusBadRequest, "Invalid request", nil, "Invalid request body")
+	if err := c.ShouldBindJSON(&u); err != nil {
+		Shared.SendGinGenericApiResponse[any](c, http.StatusBadRequest, "Invalid request", nil, "Invalid request body")
+		return
+	}
+
+	// Check if the role is not provided and default to Student
+	if u.Role == nil {
+		defaultRole := Models.Student
+		u.Role = &defaultRole
+	} else if *u.Role == Models.Admin {
+		// Ensure an admin cannot be created through this endpoint
+		Shared.SendGinGenericApiResponse[any](c, http.StatusBadRequest, "Invalid request", nil, "You can't create an admin")
 		return
 	}
 
 	// Hash the password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
 	if err != nil {
-		Shared.SendApiResponse[any](w, http.StatusInternalServerError, "Error", nil, "Failed to hash password")
+		Shared.SendGinGenericApiResponse[any](c, http.StatusInternalServerError, "Error", nil, "Failed to hash password")
 		return
 	}
 	u.Password = string(hashedPassword)
 
+	//Create a student by default
+	//u.Role = Models.Student
+
 	// Create user in DB
 	if result := db.Create(&u); result.Error != nil {
-		Shared.SendApiResponse[any](w, http.StatusInternalServerError, "Error", nil, "Failed to register user")
+		Shared.SendGinGenericApiResponse[any](c, http.StatusInternalServerError, "Error", nil, "Failed to register user")
 		return
 	}
 
 	// Mask the password in the response
 	u.Password = ""
-	Shared.SendApiResponse[any](w, http.StatusCreated, "User registered successfully", u, "")
+	Shared.SendGinGenericApiResponse[any](c, http.StatusCreated, "User registered successfully", u, "")
 }
 
-func RefreshToken(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	refreshToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+func RefreshToken(c *gin.Context) {
+	refreshToken := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
 
 	username, err := validateRefreshToken(refreshToken)
 	if err != nil {
-		Shared.SendApiResponse[any](w, http.StatusUnauthorized, "Invalid refresh token", nil, "Invalid or expired refresh token")
+		Shared.SendGinGenericApiResponse[any](c, http.StatusUnauthorized, "Invalid refresh token", nil, "Invalid or expired refresh token")
 		return
 	}
 
-	newAccessToken, err := Utils.GenerateToken(username)
+	user, err := GetUserByUsername(username)
 	if err != nil {
-		Shared.SendApiResponse[any](w, http.StatusInternalServerError, "Error generating token", nil, err.Error())
+		Shared.SendGinGenericApiResponse[any](c, http.StatusInternalServerError, "User not found", nil, err.Error())
 		return
 	}
 
-	Shared.SendApiResponse(w, http.StatusOK, "New access token generated", map[string]string{"accessToken": newAccessToken}, "")
+	newAccessToken, err := Utils.GenerateToken(user)
+	if err != nil {
+		Shared.SendGinGenericApiResponse[any](c, http.StatusInternalServerError, "Error generating token", nil, err.Error())
+		return
+	}
+
+	Shared.SendGinGenericApiResponse(c, http.StatusOK, "New access token generated", map[string]string{"accessToken": newAccessToken}, "")
 }
 
 func validateRefreshToken(token string) (string, error) {
@@ -138,9 +156,17 @@ func validateRefreshToken(token string) (string, error) {
 
 func FindRefreshToken(token string) (*Models.RefreshTokenModel, error) {
 	var refreshToken Models.RefreshTokenModel
-	result := db.Where("token = ? AND expires_at > ?", token, time.Now()).First(&refreshToken)
-	if result.Error != nil {
+	if result := db.Where("token = ? AND expires_at > ?", token, time.Now()).First(&refreshToken); result.Error != nil {
 		return nil, result.Error
 	}
 	return &refreshToken, nil
+}
+
+func GetUserByUsername(username string) (Models.User, error) {
+	var user Models.User
+	result := db.Where("username = ?", username).First(&user)
+	if result.Error != nil {
+		return Models.User{}, result.Error
+	}
+	return user, nil
 }

@@ -1,11 +1,11 @@
 package Test
 
 import (
-	"github.com/julienschmidt/httprouter"
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"webapptrials/Classroom/Shared"
 )
 
-func TestData(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	Shared.SendApiResponse(w, http.StatusOK, "Test api functional!", "Success!", "")
+func TestData(c *gin.Context) {
+	Shared.SendGinGenericApiResponse(c, http.StatusOK, "Test api functional!", "Success!", "")
 }
