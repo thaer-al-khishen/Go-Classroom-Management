@@ -3,11 +3,13 @@ package Subject
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"github.com/julienschmidt/httprouter"
 	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 	"webapptrials/Classroom/Models"
+	"webapptrials/Classroom/Shared"
 )
 
 // Assuming db is your *gorm.DB instance
@@ -17,18 +19,62 @@ func InitializeDB(d *gorm.DB) {
 	db = d
 }
 
-func GetAllSubjects(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func GetAllSubjects(c *gin.Context) {
+	// Helper function to get the first non-empty query param value
+	//getQueryParam := func(keys ...string) string {
+	//	for _, key := range keys {
+	//		if value, exists := c.GetQuery(key); exists && value != "" {
+	//			return value
+	//		}
+	//	}
+	//	return ""
+	//}
+
+	// Default values
+	defaultPage := 1
+	defaultPageSize := 10
+
+	// Try to get 'page' parameter (ignore case)
+	pageStr := Shared.GetQueryParam(c, "page", "Page")
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		page = defaultPage // Use default if not specified or invalid
+	}
+
+	// Try to get 'pageSize' parameter (ignore case)
+	pageSizeStr := Shared.GetQueryParam(c, "pageSize", "Pagesize", "pagesize", "PageSize")
+	pageSize, err := strconv.Atoi(pageSizeStr)
+	if err != nil || pageSize <= 0 || pageSize > 100 {
+		pageSize = defaultPageSize // Use default if not specified or invalid
+	}
+
+	nameFilter := Shared.GetQueryParam(c, "name", "Name")
+
+	// Apply pagination and filtering
 	var subjects []Models.Subject
-	if result := db.Find(&subjects); result.Error != nil {
-		http.Error(w, result.Error.Error(), http.StatusInternalServerError)
+	query := db.Offset((page - 1) * pageSize).Limit(pageSize)
+
+	if nameFilter != "" {
+		query = query.Where("name LIKE ?", "%"+nameFilter+"%")
+	}
+
+	if result := query.Find(&subjects); result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
 	}
 
-	err := json.NewEncoder(w).Encode(subjects)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	// Calculate total number of records for pagination metadata
+	var totalRecords int64
+	db.Model(&Models.Subject{}).Where("name LIKE ?", "%"+nameFilter+"%").Count(&totalRecords)
+
+	// Return paginated and filtered results along with pagination metadata
+	c.JSON(http.StatusOK, gin.H{
+		"data":          subjects,
+		"total_records": totalRecords,
+		"page":          page,
+		"page_size":     pageSize,
+		"total_pages":   (totalRecords + int64(pageSize) - 1) / int64(pageSize), // Ceiling division
+	})
 }
 
 func GetSubject(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
@@ -47,23 +93,19 @@ func GetSubject(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	}
 }
 
-func CreateSubject(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func CreateSubject(c *gin.Context) {
 	var subject Models.Subject
-	if err := json.NewDecoder(r.Body).Decode(&subject); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&subject); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	if result := db.Create(&subject); result.Error != nil {
-		http.Error(w, result.Error.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
 	}
 
-	err := json.NewEncoder(w).Encode(subject)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	c.JSON(http.StatusCreated, subject)
 }
 
 func UpdateSubject(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {

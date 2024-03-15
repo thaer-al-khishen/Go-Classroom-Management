@@ -6,6 +6,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	Models2 "webapptrials/Classroom/Auth/Models"
+	"webapptrials/Classroom/Handlers/Subject"
 	"webapptrials/Classroom/Handlers/Teacher"
 	"webapptrials/Classroom/Models"
 )
@@ -27,7 +28,7 @@ func main() {
 	//Student.InitializeDB(db)   // Pass the DB instance to Student
 	Teacher.InitializeDB(db) // Pass the DB instance to Teacher
 	//Classroom.InitializeDB(db) // Pass the DB instance to Classroom
-	//Subject.InitializeDB(db)   // Pass the DB instance to Subject
+	Subject.InitializeDB(db) // Pass the DB instance to Subject
 	//
 	//router := httprouter.New()
 	//
@@ -84,6 +85,9 @@ func main() {
 	r.PUT("/teachers/:id", Teacher.UpdateTeacher)
 	r.PATCH("/teachers/:id", Teacher.PatchTeacher)
 	r.DELETE("/teachers/:id", Teacher.DeleteTeacher)
+
+	r.GET("/subjects", Subject.GetAllSubjects)
+	r.POST("/subject", Subject.CreateSubject)
 
 	ginError := r.Run(":8081")
 	if ginError != nil {
