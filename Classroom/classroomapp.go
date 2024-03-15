@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 	Models2 "webapptrials/Classroom/Auth/Models"
 	"webapptrials/Classroom/Handlers/Teacher"
+	"webapptrials/Classroom/Middleware"
 	"webapptrials/Classroom/Models"
 )
 
@@ -78,6 +79,9 @@ func main() {
 	//}
 
 	r := gin.Default()
+
+	r.Use(Middleware.RateLimitMiddleware())
+
 	r.GET("/teachers", Teacher.GetAllTeachers)
 	r.GET("/teachers/:id", Teacher.GetTeacher)
 	r.POST("/teachers", Teacher.CreateTeacher)
@@ -85,7 +89,7 @@ func main() {
 	r.PATCH("/teachers/:id", Teacher.PatchTeacher)
 	r.DELETE("/teachers/:id", Teacher.DeleteTeacher)
 
-	ginError := r.Run(":8081")
+	ginError := r.Run(":8082")
 	if ginError != nil {
 		fmt.Println(ginError)
 		return
